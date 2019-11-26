@@ -12,8 +12,6 @@ install.packages("glmnet")
 
 library(tidyverse)
 library(glmnet)
-
-
 ```
 
 ```{r}
@@ -40,5 +38,169 @@ x = model.matrix(bwt ~ ., bwt_df)[,-1]
 y = bwt_df$bwt
 
 lasso_fit = glmnet(x, y)
+```
+
+
+## choosing lambda: playing around with it!!
+## cv.glmnet: 10-fold cv
+```{r}
+
+lambda = 10^(seq(3, -2, -0.1))
+
+lasso_fit =
+  glmnet(x, y, lambda = lambda)
+
+lasso_cv =
+  cv.glmnet(x, y, lambda = lambda)
+
+lambda_opt = lasso_cv$lambda.min
+```
+
+## using broom:: tidy on lasoo_fit to make it look better!
+```{r}
+
+broom::tidy(lasso_fit) 
+```
+
+we can see that when lambda is very large, we only get the intercept. as it reduces, we get intercept and slope.
+
+Now, let's do some work on the cleaned version of result!
+```{r}
+
+broom::tidy(lasso_fit) %>% 
+  select(term, lambda, estimate) %>% 
+  complete(term, lambda, fill = list(estimate = 0) ) %>% 
+  filter(term != "(Intercept)") %>% 
+  ggplot(aes(x = log(lambda, 10), y = estimate, group = term, color = term)) + 
+  geom_path() + 
+  geom_vline(xintercept = log(lambda_opt, 10), color = "blue", size = 1.2) +
+  theme(legend.position = "none")
+```
+
+shows exactly what happens as lambda goes from really small to really large. more things go to zero and taken out of our model! blue line: optimal cv in my model.
+
+## CV part...
+```{r}
+
+broom::tidy(lasso_cv)
+
+broom::tidy(lasso_cv) %>% 
+  ggplot(aes(x = log(lambda, 10), y = estimate)) + 
+  geom_point()
+```
+estimate = estimated prediction error
+minimum lambda which is better than having everyhing in model(left) and having nothing in model (right). cv erros smallest, equivalent to the blue line.
+
+RESULT: just predicting the outcome with accuracy and not caring about where it is coming from and the significances (when we care about accuracy, but not the significance).
+
+## Clustering Example 1:
+
+```{r}
+
+poke_df = 
+  read_csv("./data/pokemon.csv") %>% 
+  janitor::clean_names() %>% 
+  select(hp, speed)
+
+poke_df %>% 
+  ggplot(aes(x = hp, y = speed)) + 
+  geom_point()
+```
+
+```{r}
+
+kmeans_fit =
+  kmeans(x = poke_df, centers = 3)
+```
+
+Process and plot the results:
+
+```{r}
+
+poke_df =
+  broom::augment(kmeans_fit, poke_df)
+```
+tells us which cluster each pokemon is assigned to.
+
+```{r}
+
+poke_df %>% 
+  ggplot(aes(x = hp, y = speed, color = .cluster)) +
+  geom_point()
+```
+clustered my pokemons.
+
+
+## what happens if I haven 2, 3, 4 clusters?
+this is a step in finding the number of k (number of clusters).
+```{r}
+
+clusts =
+  tibble(k = 2:4) %>%
+  mutate(
+    km_fit =    map(k, ~kmeans(poke_df, .x)),
+    augmented = map(km_fit, ~broom::augment(.x, poke_df))
+  )
+
+clusts %>% 
+  select(-km_fit) %>% 
+  unnest(augmented) %>% 
+  ggplot(aes(hp, speed, color = .cluster)) +
+  geom_point(aes(color = .cluster)) +
+  facet_grid(~k)
+```
+
+## clustering trajectories:
+
+```{r}
+
+traj_data = 
+  read_csv("./data/trajectories.csv")
+
+traj_data %>% 
+  ggplot(aes(x = week, y = value, group = subj)) + 
+  geom_point() + 
+  geom_path()
+```
+
+
+Some bunch of trajectories!
+
+given this data, I can compute intercept and slope for aeach person (where did they start and where did rhey continue). Do some clustering on these, and see if we can see a pattern!
+
+we should fit a model for every individual!!!
+
+```{r}
+
+traj_data %>% 
+  nest(data = week:value) %>% 
+  mutate(
+    models = map(data, ~lm(value ~ week, data = .x)),
+    result = map(models, broom::tidy)
+  ) %>% 
+  select(subj, result) %>% 
+  unnest(result)
+# look at the result!
+
+# tidy the results (extract intercept and slope):
+int_slope_df =
+  traj_data %>% 
+  nest(data = week:value) %>% 
+  mutate(
+    models = map(data, ~lm(value ~ week, data = .x)),
+    result = map(models, broom::tidy)
+  ) %>% 
+  select(subj, result) %>% 
+  unnest(result)%>% 
+  select(subj, term, estimate) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+  rename(int = "(Intercept)", slope = week)
+
+int_slope_df %>% 
+  ggplot(aes(x = int, y = slope)) + 
+  geom_point()
 ```
 

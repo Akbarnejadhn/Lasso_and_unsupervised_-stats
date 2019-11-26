@@ -204,3 +204,29 @@ int_slope_df %>%
   geom_point()
 ```
 
+```{r}
+
+# getting clusters:
+km_fit = 
+  kmeans(
+    x = int_slope_df %>% select(-subj) %>% scale, 
+    centers = 2)
+
+int_slope_df =
+  broom::augment(km_fit, int_slope_df)
+```
+ 
+visualizing clusters:
+```{r}
+
+int_slope_df %>% 
+  ggplot(aes(x = int, y = slope, color = .cluster)) +
+  geom_point()
+
+left_join(traj_data, int_slope_df) %>% 
+  ggplot(aes(x = week, y = value, group = subj, color = .cluster)) + 
+  geom_point() + 
+  geom_path()
+```
+
+# These are subjects in Longitudinal studies!
